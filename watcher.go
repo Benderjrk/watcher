@@ -74,8 +74,6 @@ func main() {
 			err := cmd.Run()
 			if err != nil {
 				log.Printf("Command execution failed: %s\n", err)
-			} else {
-				log.Printf("Command executed successfully\n")
 			}
 		}
 	}
