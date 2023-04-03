@@ -1,7 +1,125 @@
 # Golang folder watcher and command runner
 
+## The Watcher Go Lang Powershell and sh specific (so far)
+
+![eye logo](./public/imgs/eye_icon.jpg)
+
 I didn't have something easy to use on Windows 10. Everything wanted me
 to have extra steps. What better way to practice. Just building the tool
 myself.
 
 The goal is for a windows folder watcher for my golang development.
+
+![watching file example](./public/imgs/golang_watcher.png)
+![watching file example two](./public/imgs/golang_watcher_2.png)
+
+## How was the project setup from scratch?
+
+* Setup a project folder `watcher`
+* `cd watcher`
+* `go mod init github.com/YOURUSERNAME/directory_watcher` - This sets up
+	the module folder to allow downloads into. Without it, we cannot run
+	`go get github.com/fsnotify/fsnotify`
+* `go get github.com/fsnotify/fsnotify`
+* `vim watcher.go` - this is where we will put the program
+
+```go
+package main
+
+import (
+	"flag"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"sync"
+	"time"
+
+	"github.com/fsnotify/fsnotify"
+)
+
+var debounceDuration = 5000 * time.Millisecond
+
+func debounce(execution func(), duration time.Duration) func() {
+	var timer *time.Timer
+	var mu sync.Mutex
+
+	return func() {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if timer != nil {
+			timer.Stop()
+		}
+
+		timer = time.AfterFunc(duration, execution)
+	}
+}
+
+func main() {
+	dirFlag := flag.String("d", ".", "Directory to watch for changes")
+	cmdFlag := flag.String("c", "", "Shell command to run on file changes")
+	flag.Parse()
+	dirToWatch := *dirFlag
+	commandToRun := *cmdFlag
+
+	// Check if the directory exists
+	if _, err := os.Stat(dirToWatch); os.IsNotExist(err) {
+		log.Fatalf("Directory %s does not exist\n", dirToWatch)
+	}
+
+	// Create a new watcher
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer watcher.Close()
+
+	// Start watching the directory
+	err = watcher.Add(dirToWatch)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Printf("Watching directory: %s\n", dirToWatch)
+
+	executeCommand := func() {
+		if commandToRun != "" {
+			var cmd *exec.Cmd
+			if runtime.GOOS == "windows" {
+				cmd = exec.Command("powershell.exe", "-Command", commandToRun)
+			} else {
+				cmd = exec.Command("sh", "-c", commandToRun)
+			}
+			cmd.Dir = dirToWatch
+			cmd.Stdout = os.Stdout
+			cmd.Stderr = os.Stderr
+
+			err := cmd.Run()
+			if err != nil {
+				log.Printf("Command execution failed: %s\n", err)
+			} else {
+				log.Printf("Command executed successfully\n")
+			}
+		}
+	}
+
+	debouncedExecuteCommand := debounce(executeCommand, debounceDuration)
+
+	// Process file system events
+	for {
+		select {
+		case event := <-watcher.Events:
+			if event.Op&fsnotify.Write == fsnotify.Write || event.Op&fsnotify.Create == fsnotify.Create {
+				relativePath, _ := filepath.Rel(dirToWatch, event.Name)
+				log.Printf("File changed: %s\n", relativePath)
+				debouncedExecuteCommand()
+			}
+		case err := <-watcher.Errors:
+			log.Printf("Watcher error: %s\n", err)
+		}
+	}
+}
+```
