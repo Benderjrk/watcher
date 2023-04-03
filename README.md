@@ -1,5 +1,6 @@
 # Golang folder watcher and command runner
 
+
 ## The Watcher Go Lang Powershell and sh specific (so far)
 
 ![eye logo](./public/imgs/eye_icon.jpg)
@@ -10,10 +11,24 @@ myself.
 
 The goal is for a windows folder watcher for my golang development.
 
+## Table of Contents
+* [Examples](#examples)
+* [Project Setup](#project-setup)
+* [Project Breakdown](#project-breakdown)
+
+---
+
+## Examples
+
 ![watching file example](./public/imgs/golang_watcher.png)
 ![watching file example two](./public/imgs/golang_watcher_2.png)
 
-## How was the project setup from scratch?
+After the program is compiled for your Operating System. You should be
+able to use it like `./watcher -d /path/to/directory -c "clear; go run hello.go"`
+
+## Project Setup
+
+### How was the project setup from scratch?
 
 * Setup a project folder `watcher`
 * `cd watcher`
@@ -22,6 +37,12 @@ The goal is for a windows folder watcher for my golang development.
 	`go get github.com/fsnotify/fsnotify`
 * `go get github.com/fsnotify/fsnotify`
 * `vim watcher.go` - this is where we will put the program
+* `./watcher -d /path/to/directory -c "clear; go run hello.go"` - This
+	is the use of the command.
+	- `-d`: directory to watch
+	- `-c`: commands to run
+
+`watcher.go`:
 
 ```go
 package main
@@ -123,3 +144,5 @@ func main() {
 	}
 }
 ```
+
+What is really going on in here? Let's break it down step by step.
