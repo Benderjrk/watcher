@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/mitchellh/go-ps"
 )
 
 var debounceDuration = 5000 * time.Millisecond
@@ -30,6 +32,14 @@ func debounce(execution func(), duration time.Duration) func() {
 
 		timer = time.AfterFunc(duration, execution)
 	}
+}
+
+func getParentShell() (string, error) {
+	proc, err := ps.FindProcess(os.Getppid())
+	if err != nil {
+		return "", err
+	}
+	return proc.Executable(), nil
 }
 
 func main() {
@@ -51,8 +61,16 @@ func main() {
 	}
 	defer watcher.Close()
 
-	// Start watching the directory
-	err = watcher.Add(dirToWatch)
+	// Add directories and subdirectories to the watcher
+	err = filepath.Walk(dirToWatch, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			err = watcher.Add(path)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -63,7 +81,16 @@ func main() {
 		if commandToRun != "" {
 			var cmd *exec.Cmd
 			if runtime.GOOS == "windows" {
-				cmd = exec.Command("powershell.exe", "-Command", commandToRun)
+				shell, err := getParentShell()
+				if err != nil {
+					log.Fatalf("Failed to detect parent shell: %s\n", err)
+				}
+				log.Println(shell)
+				if strings.Contains(strings.ToLower(shell), "powershell") || strings.Contains(strings.ToLower(shell), "pwsh") {
+					cmd = exec.Command("powershell.exe", "-Command", commandToRun)
+				} else {
+					cmd = exec.Command("cmd.exe", "/C", commandToRun)
+				}
 			} else {
 				cmd = exec.Command("sh", "-c", commandToRun)
 			}

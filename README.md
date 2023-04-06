@@ -1,7 +1,11 @@
 # Golang folder watcher and command runner
 
 
-## The Watcher Go Lang Powershell and sh specific (so far)
+## The Watcher
+
+> The recursive file watcher. That runs a command based on the command
+you give it. Checks if you're running inside of command or powershell on
+windows. Or defaults to `sh`.
 
 ![eye logo](./public/imgs/eye_icon.jpg)
 
@@ -55,10 +59,12 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/mitchellh/go-ps"
 )
 
 var debounceDuration = 5000 * time.Millisecond
@@ -77,6 +83,14 @@ func debounce(execution func(), duration time.Duration) func() {
 
 		timer = time.AfterFunc(duration, execution)
 	}
+}
+
+func getParentShell() (string, error) {
+	proc, err := ps.FindProcess(os.Getppid())
+	if err != nil {
+		return "", err
+	}
+	return proc.Executable(), nil
 }
 
 func main() {
@@ -98,8 +112,16 @@ func main() {
 	}
 	defer watcher.Close()
 
-	// Start watching the directory
-	err = watcher.Add(dirToWatch)
+	// Add directories and subdirectories to the watcher
+	err = filepath.Walk(dirToWatch, func(path string, info os.FileInfo, err error) error {
+		if info.IsDir() {
+			err = watcher.Add(path)
+			if err != nil {
+				log.Fatal(err)
+			}
+		}
+		return nil
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -110,7 +132,17 @@ func main() {
 		if commandToRun != "" {
 			var cmd *exec.Cmd
 			if runtime.GOOS == "windows" {
-				cmd = exec.Command("powershell.exe", "-Command", commandToRun)
+				shell, err := getParentShell()
+				if err != nil {
+					log.Fatalf("Failed to detect parent shell: %s\n", err)
+				}
+
+				if strings.Contains(strings.ToLower(shell), "powershell") ||
+				strings.Contains(strings.ToLower(shell), "pwsh") {
+					cmd = exec.Command("powershell.exe", "-Command", commandToRun)
+				} else {
+					cmd = exec.Command("cmd.exe", "/C", commandToRun)
+				}
 			} else {
 				cmd = exec.Command("sh", "-c", commandToRun)
 			}
@@ -121,8 +153,6 @@ func main() {
 			err := cmd.Run()
 			if err != nil {
 				log.Printf("Command execution failed: %s\n", err)
-			} else {
-				log.Printf("Command executed successfully\n")
 			}
 		}
 	}
@@ -163,6 +193,7 @@ import (
 	"time"
 
 	"github.com/fsnotify/fsnotify"
+	"github.com/mitchellh/go-ps"
 )
 ```
 
@@ -187,6 +218,8 @@ import (
 * `time`:
 * `github.com/fsnotify/fsnotify`: This is the package that will watch
 	the directory and alert for changes.
+* `github.com/mitchellh/go-ps`: This checks the current process being
+	used to we can tell if it's powershell or not
 
 Now that we understand the imports at the top we can work on the
 `debounce` functionality.
